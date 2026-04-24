@@ -6,16 +6,16 @@ const mysql = require('mysql2');
 const app = express();
 app.use(express.json());
 
-// BUG: connectionLimit is set to 2 (far too low).
-// When scaled to 5+ pods, each pod creates its own pool of 2 connections.
-// Under concurrent load, connection exhaustion causes requests to hang/fail.
-// TODO: Fix this by setting an appropriate connectionLimit (e.g. 10)
+// FIX: connectionLimit increased from 2 to 10.
+// With 5+ pods, each pod creates its own pool. A limit of 2 caused
+// connection exhaustion under concurrent load, resulting in 500 errors.
+// 10 connections per pod provides sufficient headroom for concurrent requests.
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  connectionLimit: 2, // intentionally too low for multi-pod deployment
+  connectionLimit: 10, // fixed: was 2, increased to 10 for multi-pod deployment
   waitForConnections: true,
   queueLimit: 0
 });
