@@ -1,13 +1,11 @@
 data "azurerm_client_config" "current" {}
 
-# Resource Group
 resource "azurerm_resource_group" "rg" {
   name     = var.resource_group_name
   location = var.location
   tags     = var.tags
 }
 
-# Virtual Network
 resource "azurerm_virtual_network" "vnet" {
   name                = var.vnet_name
   address_space       = var.vnet_address_space
@@ -16,7 +14,6 @@ resource "azurerm_virtual_network" "vnet" {
   tags                = var.tags
 }
 
-# AKS Subnet
 resource "azurerm_subnet" "aks_subnet" {
   name                 = "subnet-aks"
   resource_group_name  = azurerm_resource_group.rg.name
@@ -24,12 +21,12 @@ resource "azurerm_subnet" "aks_subnet" {
   address_prefixes     = ["10.0.1.0/24"]
 }
 
-# MySQL Subnet
 resource "azurerm_subnet" "mysql_subnet" {
   name                 = "subnet-mysql"
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = ["10.0.2.0/24"]
+
   delegation {
     name = "mysql-delegation"
     service_delegation {
@@ -41,7 +38,6 @@ resource "azurerm_subnet" "mysql_subnet" {
   }
 }
 
-# Log Analytics Workspace
 resource "azurerm_log_analytics_workspace" "law" {
   name                = var.log_analytics_workspace_name
   location            = azurerm_resource_group.rg.location
@@ -51,7 +47,6 @@ resource "azurerm_log_analytics_workspace" "law" {
   tags                = var.tags
 }
 
-# Azure Container Registry
 resource "azurerm_container_registry" "acr" {
   name                = var.acr_name
   resource_group_name = azurerm_resource_group.rg.name
@@ -61,7 +56,6 @@ resource "azurerm_container_registry" "acr" {
   tags                = var.tags
 }
 
-# User Assigned Managed Identity for AKS -> Key Vault
 resource "azurerm_user_assigned_identity" "aks_identity" {
   name                = "identity-aks-microservices"
   location            = azurerm_resource_group.rg.location
@@ -69,13 +63,14 @@ resource "azurerm_user_assigned_identity" "aks_identity" {
   tags                = var.tags
 }
 
-# AKS Cluster
 resource "azurerm_kubernetes_cluster" "aks" {
   name                = var.aks_cluster_name
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   dns_prefix          = var.aks_cluster_name
-  kubernetes_version  = "1.29"
+
+  # ✅ FIXED VERSION
+  kubernetes_version = "1.33"
 
   default_node_pool {
     name                = "default"
@@ -92,14 +87,15 @@ resource "azurerm_kubernetes_cluster" "aks" {
     identity_ids = [azurerm_user_assigned_identity.aks_identity.id]
   }
 
-   network_profile {
-  network_plugin    = "azure"
-  network_policy    = "calico"
-  load_balancer_sku = "standard"
-  service_cidr      = "172.16.0.0/16"
-  dns_service_ip    = "172.16.0.10"
-}
-  
+  # ✅ FIXED NETWORK CONFIG
+  network_profile {
+    network_plugin    = "azure"
+    network_policy    = "calico"
+    load_balancer_sku = "standard"
+    service_cidr      = "172.16.0.0/16"
+    dns_service_ip    = "172.16.0.10"
+  }
+
   oms_agent {
     log_analytics_workspace_id = azurerm_log_analytics_workspace.law.id
   }
@@ -111,7 +107,6 @@ resource "azurerm_kubernetes_cluster" "aks" {
   tags = var.tags
 }
 
-# ACR Pull Role for AKS
 resource "azurerm_role_assignment" "aks_acr_pull" {
   principal_id                     = azurerm_kubernetes_cluster.aks.kubelet_identity[0].object_id
   role_definition_name             = "AcrPull"
@@ -119,7 +114,6 @@ resource "azurerm_role_assignment" "aks_acr_pull" {
   skip_service_principal_aad_check = true
 }
 
-# Key Vault
 resource "azurerm_key_vault" "kv" {
   name                       = var.key_vault_name
   location                   = azurerm_resource_group.rg.location
@@ -143,7 +137,6 @@ resource "azurerm_key_vault" "kv" {
   }
 }
 
-# MySQL Private DNS Zone
 resource "azurerm_private_dns_zone" "mysql_dns" {
   name                = "microservices.mysql.database.azure.com"
   resource_group_name = azurerm_resource_group.rg.name
@@ -156,8 +149,8 @@ resource "azurerm_private_dns_zone_virtual_network_link" "mysql_dns_link" {
   virtual_network_id    = azurerm_virtual_network.vnet.id
 }
 
-# MySQL Flexible Server
 resource "azurerm_mysql_flexible_server" "mysql" {
+  # ✅ FIXED UNIQUE NAME
   name                   = var.mysql_server_name
   resource_group_name    = azurerm_resource_group.rg.name
   location               = azurerm_resource_group.rg.location
@@ -187,7 +180,6 @@ resource "azurerm_mysql_flexible_server" "mysql" {
   depends_on = [azurerm_private_dns_zone_virtual_network_link.mysql_dns_link]
 }
 
-# MySQL Database
 resource "azurerm_mysql_flexible_database" "db" {
   name                = var.mysql_db_name
   resource_group_name = azurerm_resource_group.rg.name
@@ -196,43 +188,36 @@ resource "azurerm_mysql_flexible_database" "db" {
   collation           = "utf8mb4_unicode_ci"
 }
 
-# Store MySQL credentials in Key Vault
 resource "azurerm_key_vault_secret" "db_host" {
   name         = "db-host"
   value        = azurerm_mysql_flexible_server.mysql.fqdn
   key_vault_id = azurerm_key_vault.kv.id
-  depends_on   = [azurerm_key_vault.kv]
 }
 
 resource "azurerm_key_vault_secret" "db_user" {
   name         = "db-user"
   value        = var.mysql_admin_username
   key_vault_id = azurerm_key_vault.kv.id
-  depends_on   = [azurerm_key_vault.kv]
 }
 
 resource "azurerm_key_vault_secret" "db_password" {
   name         = "db-password"
   value        = var.mysql_admin_password
   key_vault_id = azurerm_key_vault.kv.id
-  depends_on   = [azurerm_key_vault.kv]
 }
 
 resource "azurerm_key_vault_secret" "db_name" {
   name         = "db-name"
   value        = var.mysql_db_name
   key_vault_id = azurerm_key_vault.kv.id
-  depends_on   = [azurerm_key_vault.kv]
 }
 
 resource "azurerm_key_vault_secret" "jwt_secret" {
   name         = "jwt-secret"
   value        = "CHANGE_ME_STRONG_JWT_SECRET_KEY_32CHARS"
   key_vault_id = azurerm_key_vault.kv.id
-  depends_on   = [azurerm_key_vault.kv]
 }
 
-# Azure Monitor - Container Insights
 resource "azurerm_monitor_diagnostic_setting" "aks_diagnostics" {
   name                       = "aks-diagnostics"
   target_resource_id         = azurerm_kubernetes_cluster.aks.id
