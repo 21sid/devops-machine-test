@@ -7,7 +7,7 @@ variable "resource_group_name" {
 variable "location" {
   description = "Azure region for all resources"
   type        = string
-  default     = "East US"
+  default     = "southeastasia"
 }
 
 variable "environment" {
@@ -49,7 +49,7 @@ variable "key_vault_name" {
 variable "mysql_server_name" {
   description = "Name of Azure MySQL Flexible Server"
   type        = string
-  default     = "mysql-microservices-prod"
+  default     = "mysql-microsvc-prod2"
 }
 
 variable "mysql_admin_username" {
