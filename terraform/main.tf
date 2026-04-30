@@ -166,11 +166,6 @@ resource "azurerm_mysql_flexible_server" "mysql" {
     size_gb = 20
   }
 
-  backup {
-    backup_retention_days        = 7
-    geo_redundant_backup_enabled = false
-  }
-
   high_availability {
     mode = "Disabled"
   }
